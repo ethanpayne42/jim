@@ -1,7 +1,7 @@
 from jaxtyping import Array
 from ripple.waveforms.IMRPhenomD import gen_IMRPhenomD_hphc
 from ripple.waveforms.IMRPhenomPv2 import gen_IMRPhenomPv2_hphc
-from JaxNRSur.SurrogateModel import SurrogateModel
+from jaxNRSur.SurrogateModel import SurrogateModel
 import jax.numpy as jnp
 from abc import ABC
 from scipy.signal.windows import tukey
@@ -82,9 +82,8 @@ class RippleIMRPhenomPv2(Waveform):
 
 class NRHybSur3dq8FD(Waveform):
     
-    def __init__(self, datapath: str, seglen: float, srate: float, tukey_alpha: float = 0.4):
-        model = SurrogateModel(datapath)
-        self.kernel = model.make_waveform_kernel(jit=True)
+    def __init__(self, datapath: str, seglen: float, srate: float, tukey_alpha: float=0.4):
+        self.model = SurrogateModel(datapath)
         self.tukey_alpha = tukey_alpha
         
         # Precomputing the time and window arrays
@@ -104,10 +103,10 @@ class NRHybSur3dq8FD(Waveform):
         
         # Convert to geometric unit time array for NRSur
         time_m = self.time * C_SI / RSUN_SI / M
-        hrM_TD = self.kernel(time_m, theta_NRHyb, theta=params["iota"])
+        hrM_TD = self.model.get_waveform(time_m, theta_NRHyb, theta=params["iota"])
         
         # Fourier transform
-        hrM_FD = jnp.fft.fft(hrM_FD * self.window)
+        hrM_FD = jnp.fft.fft(hrM_TD * self.window)
         
         # get FD plus and cross polarizations (following Max's calculation)
         h_fd_positive = hrM_FD[:self.n]
