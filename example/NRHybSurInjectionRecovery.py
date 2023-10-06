@@ -1,7 +1,7 @@
 from jimgw.jim import Jim
 from jimgw.detector import H1, L1, V1
 from jimgw.likelihood import TransientLikelihoodFD
-from jimgw.waveform import NRHybSur3dq8FD
+from jimgw.waveform import NRHybSur3dq8FD, RippleIMRPhenomD
 from jimgw.prior import Uniform
 from ripple import ms_to_Mc_eta
 import jax.numpy as jnp
@@ -26,21 +26,21 @@ class InjectionRecoveryParser(Tap):
     ifos: list[str]  = ["H1", "L1", "V1"]
 
     # Injection parameters
-    m1: float = 80.0
+    m1: float = 70.0
     m2: float = 70.0
-    s1_z: float = 0.5
-    s2_z: float = 0.5
-    dist_mpc: float = 4000.
+    s1_z: float = 0.0
+    s2_z: float = 0.0
+    dist_mpc: float = 2000
     tc: float = 0.
-    #phic: float = 0.0
-    inclination: float = 0.5
+    phic: float = 0.0
+    inclination: float = 0.0
     polarization_angle: float = 0.7
     ra: float = 1.2
     dec: float = 0.3
 
     # Sampler parameters
-    n_dim: int = 10
-    n_chains: int = 500
+    n_dim: int = 11
+    n_chains: int = 100
     n_loop_training: int = 200
     n_loop_production: int = 10
     n_local_steps: int = 300
@@ -75,7 +75,7 @@ print("Making noises")
 
 print("Injection signals")
 
-freqs = jnp.linspace(args.fmin, args.f_sampling/2, args.duration*(args.f_sampling//2)+1)
+freqs = jnp.linspace(0, args.f_sampling/2, args.duration*(args.f_sampling//2)+1)
 
 Mc, eta = ms_to_Mc_eta(jnp.array([args.m1, args.m2]))
 trigger_time = 1126259462.4
@@ -84,25 +84,26 @@ epoch = args.duration - post_trigger_duration
 gmst = Time(trigger_time, format='gps').sidereal_time('apparent', 'greenwich').rad
 
 waveform = NRHybSur3dq8FD('/mnt/home/epayne/NRHybSur3dq8.h5', 
-                          seglen=args.duration, srate=args.f_sampling)
+                           seglen=args.duration, srate=args.f_sampling)
+#waveform = RippleIMRPhenomD(f_ref=20)
+
 prior = Uniform(
-    xmin = [10, 0.125, 0, 0, 0., -0.05, -1, 0., 0.,-1.],
-    xmax = [130., 1., 1., 1., 1e4, 0.05, 1., jnp.pi, 2*jnp.pi, 1.],
-    naming = ["M_c", "q", "s1_z", "s2_z", "d_L", "t_c", "cos_iota", "psi", "ra", "sin_dec"],
-    transforms = {"q": ("eta", lambda params: params['q']/(1+params['q'])**2),
-                 "cos_iota": ("iota",lambda params: jnp.arccos(params['cos_iota'])),
+    xmin = [40, 0.125, -1., -1., 100, 0., -0.05, -1, 0., 0.,-1.],
+    xmax = [130., 1., 1., 1., 1e4, 2*jnp.pi, 0.05, 1., jnp.pi, 2*jnp.pi, 1.],
+    naming = ["M_c", "q", "s1_z", "s2_z", "d_L", "phase_c", "t_c", "cos_iota", "psi", "ra", "sin_dec"],
+    transforms = {"cos_iota": ("iota",lambda params: jnp.arccos(params['cos_iota'])),
                  "sin_dec": ("dec",lambda params: jnp.arcsin(params['sin_dec']))} # sin and arcsin are periodize cos_iota and sin_dec
 )
-true_param = jnp.array([Mc, args.m2/args.m1, args.s1_z, args.s2_z, args.dist_mpc, args.tc, jnp.cos(args.inclination), args.polarization_angle, args.ra, jnp.sin(args.dec)])
+true_param = jnp.array([Mc, args.m2/args.m1, args.s1_z, args.s2_z, args.dist_mpc, args.phic, args.tc, jnp.cos(args.inclination), args.polarization_angle, args.ra, jnp.sin(args.dec)])
 print(true_param)
 true_param = prior.add_name(true_param, transform_name = True, transform_value = True)
 print(true_param)
 detector_param = {"ra": args.ra, "dec": args.dec, "gmst": gmst, "psi": args.polarization_angle, "epoch": epoch, "t_c": args.tc}
 h_sky = waveform(freqs, true_param)
 key, subkey = jax.random.split(jax.random.PRNGKey(args.seed+1234))
-H1.inject_signal(subkey, freqs, h_sky, detector_param)
+H1.inject_signal(subkey, freqs, h_sky, detector_param, psd_file='/mnt/home/epayne/code_libraries/jim/example/H1.txt')
 key, subkey = jax.random.split(key)
-L1.inject_signal(subkey, freqs, h_sky, detector_param)
+L1.inject_signal(subkey, freqs, h_sky, detector_param, psd_file='/mnt/home/epayne/code_libraries/jim/example/L1.txt')
 #key, subkey = jax.random.split(key)
 #V1.inject_signal(subkey, freqs, h_sky, detector_param)
 
@@ -138,7 +139,8 @@ jim = Jim(likelihood,
         seed = args.seed,
         num_layers = args.num_layers,
         hidden_size = args.hidden_size,
-        num_bins = args.num_bins
+        num_bins = args.num_bins,
+        precompile=True
         )
 
 key, subkey = jax.random.split(key)

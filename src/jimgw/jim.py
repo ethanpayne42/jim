@@ -27,10 +27,12 @@ class Jim(object):
         num_bins = kwargs.get("num_bins", 8)
 
         local_sampler_arg = kwargs.get("local_sampler_arg", {})
-
+        
         local_sampler = MALA(self.posterior, True, local_sampler_arg) # Remember to add routine to find automated mass matrix
-
+        
         model = MaskedCouplingRQSpline(self.Prior.n_dim, num_layers, hidden_size, num_bins, rng_key_set[-1])
+        
+        print('Test 1')
         self.Sampler = Sampler(
             self.Prior.n_dim,
             rng_key_set,
@@ -38,7 +40,7 @@ class Jim(object):
             local_sampler,
             model,
             **kwargs)
-        
+        print('Test 3')
 
     def maximize_likelihood(self, bounds: tuple[Array,Array], set_nwalkers: int = 100, n_loops: int = 2000, seed = 92348):
         bounds = jnp.array(bounds).T
