@@ -20,13 +20,13 @@ class InjectionRecoveryParser(Tap):
     
     # Noise parameters
     seed: int = 0
-    f_sampling: int  = 4096
+    f_sampling: int  = 2048
     duration: int = 4
     fmin: float = 20.0
     ifos: list[str]  = ["H1", "L1", "V1"]
 
     # Injection parameters
-    m1: float = 70.0
+    m1: float = 80.0
     m2: float = 70.0
     s1_z: float = 0.0
     s2_z: float = 0.0
@@ -88,16 +88,15 @@ waveform = NRHybSur3dq8FD('/mnt/home/epayne/NRHybSur3dq8.h5',
 #waveform = RippleIMRPhenomD(f_ref=20)
 
 prior = Uniform(
-    xmin = [40, 0.125, -1., -1., 100, 0., -0.05, -1, 0., 0.,-1.],
-    xmax = [130., 1., 1., 1., 1e4, 2*jnp.pi, 0.05, 1., jnp.pi, 2*jnp.pi, 1.],
+    xmin = [40, 0.125, -0.8, -0.8, 100, 0., -0.05, -1, 0., 0.,-1.],
+    xmax = [130., 1., 0.8, 0.8, 1e4, 2*jnp.pi, 0.05, 1., jnp.pi, 2*jnp.pi, 1.],
     naming = ["M_c", "q", "s1_z", "s2_z", "d_L", "phase_c", "t_c", "cos_iota", "psi", "ra", "sin_dec"],
-    transforms = {"cos_iota": ("iota",lambda params: jnp.arccos(params['cos_iota'])),
-                 "sin_dec": ("dec",lambda params: jnp.arcsin(params['sin_dec']))} # sin and arcsin are periodize cos_iota and sin_dec
+    transforms = {
+                 "cos_iota": ("iota",lambda params: jnp.arccos(jnp.arcsin(jnp.sin(params['cos_iota']/2*jnp.pi))*2/jnp.pi)),
+                 "sin_dec": ("dec",lambda params: jnp.arcsin(jnp.arcsin(jnp.sin(params['sin_dec']/2*jnp.pi))*2/jnp.pi))} # sin and arcsin are periodize cos_iota and sin_dec
 )
 true_param = jnp.array([Mc, args.m2/args.m1, args.s1_z, args.s2_z, args.dist_mpc, args.phic, args.tc, jnp.cos(args.inclination), args.polarization_angle, args.ra, jnp.sin(args.dec)])
-print(true_param)
 true_param = prior.add_name(true_param, transform_name = True, transform_value = True)
-print(true_param)
 detector_param = {"ra": args.ra, "dec": args.dec, "gmst": gmst, "psi": args.polarization_angle, "epoch": epoch, "t_c": args.tc}
 h_sky = waveform(freqs, true_param)
 key, subkey = jax.random.split(jax.random.PRNGKey(args.seed+1234))
@@ -110,13 +109,13 @@ L1.inject_signal(subkey, freqs, h_sky, detector_param, psd_file='/mnt/home/epayn
 likelihood = TransientLikelihoodFD([H1, L1], waveform, trigger_time, args.duration, post_trigger_duration)
 
 mass_matrix = jnp.eye(args.n_dim)
-mass_matrix = mass_matrix.at[1,1].set(1e-3)
-mass_matrix = mass_matrix.at[9,9].set(1e-3)
+mass_matrix = mass_matrix.at[1,1].set(1e-3) 
+# # Setting smaller steps on time
+mass_matrix = mass_matrix.at[6,6].set(1e-3)
 local_sampler_arg = {"step_size": mass_matrix*3e-3}
 
 print((jnp.array(list(true_param.values()))))
 print(likelihood.evaluate(true_param, {}))
-print(waveform(freqs, true_param))
 print(prior.log_prob(jnp.array(list(true_param.values())[:-1])))
 
 jim = Jim(likelihood, 
@@ -140,7 +139,7 @@ jim = Jim(likelihood,
         num_layers = args.num_layers,
         hidden_size = args.hidden_size,
         num_bins = args.num_bins,
-        precompile=True
+        precompile=False
         )
 
 key, subkey = jax.random.split(key)
