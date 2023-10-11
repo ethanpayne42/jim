@@ -82,7 +82,7 @@ class TransientLikelihoodFD(LikelihoodBase):
         """
         return [detector.name for detector in self.detectors]
 
-    def evaluate(
+    def evaluate_likelihood(
         self, params: Array, data: dict
     ) -> float:  # TODO: Test whether we need to pass data in or with class changes is fine.
         """
@@ -113,8 +113,20 @@ class TransientLikelihoodFD(LikelihoodBase):
                 ).real
             )
             log_likelihood += match_filter_SNR - optimal_SNR / 2
+        
         return log_likelihood
 
+    def evaluate(
+        self, params: Array, data: dict
+    ) -> float:  # TODO: Test whether we need to pass data in or with class changes is fine.
+        """
+        Evaluate the likelihood for a given set of parameters.
+        """
+        
+        log_likelihood_mask = jnp.logical_and(params['q'] < 1, jnp.logical_and(jnp.abs(params['s1_z']) < 0.8, jnp.abs(params['s2_z']) < 0.8))
+        
+        return jax.lax.select(log_likelihood_mask, self.evaluate_likelihood(params, data), -jnp.inf)
+        
 
 class HeterodynedTransientLikelihoodFD(TransientLikelihoodFD):
 
